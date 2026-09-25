@@ -1,0 +1,37 @@
+# Physical, regulatory and clinical data per isotope.
+# Every number carries a source or is flagged ASSUMPTION (see DESIGN_NOTES.md §6).
+# Adding a drug = adding an entry here and listing it in an instance config.
+
+isotopes:
+  Y-90:
+    half_life_h: 64.1          # commonly quoted value (2.67 d)
+    a2_tbq: 0.3                # 49 CFR 173.435 (A1 = A2 = 0.3 TBq)
+    vials_per_truck: 20        # ASSUMPTION (low confidence): pure beta emitter, light shielding
+    dose_model:
+      # Radioembolization activity is set from liver dosimetry, not body weight.
+      # Clinical median ~1.7 GBq (range 1.4-2.5); SIR-Spheres max prescribed 3 GBq.
+      kind: lognormal
+      median_mbq: 1800
+      sigma: 0.30
+      min_mbq: 500
+      max_mbq: 3000
+
+  Pb-212:
+    half_life_h: 10.64
+    a2_tbq: 0.2                # 49 CFR 173.435, footnote (a): includes short-lived daughters
+    vials_per_truck: 6         # ASSUMPTION: Tl-208 daughter emits 2.6 MeV gamma -> heavy shielding
+    dose_model:
+      # ALPHAMEDIX-02 (212Pb-DOTAMTATE): 67.6 uCi/kg = 2.50 MBq/kg, max 5.5 mCi per cycle.
+      kind: weight_based
+      mbq_per_kg: [2.50, 2.50]
+      max_mbq: 203.5
+
+  At-211:
+    half_life_h: 7.214
+    a2_tbq: 0.5                # 49 CFR 173.435, footnote (a)
+    vials_per_truck: 10        # ASSUMPTION: ~77-92 keV X-rays -> moderate shielding
+    dose_model:
+      # [211At]NaAt dose escalation 1.25-3.5 MBq/kg; [211At]MABG 0.65-2.1 MBq/kg.
+      kind: weight_based
+      mbq_per_kg: [1.25, 3.5]
+      max_mbq: null

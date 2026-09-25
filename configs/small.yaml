@@ -1,0 +1,7 @@
+# Validation-sized instance: small enough for an exact MILP.
+extends: base.yaml
+name: small
+seed: 1
+network:
+  n_academic: 2
+  n_community: 4

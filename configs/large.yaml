@@ -1,0 +1,6 @@
+extends: base.yaml
+name: large
+seed: 3
+network:
+  n_academic: 8
+  n_community: 32

@@ -1,0 +1,6 @@
+extends: base.yaml
+name: medium
+seed: 2
+network:
+  n_academic: 4
+  n_community: 12

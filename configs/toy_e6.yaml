@@ -1,0 +1,40 @@
+# Hand-checkable toy case from TIMELINE.md E6.
+# Two hospitals, 30 min from the depot and from each other; one patient each.
+# Expected LB (direct truck, latest batch):
+#   At-211: 280.0 MBq per patient (batch 3.5 h before treatment)
+#   Y-90:   207.7 MBq per patient
+mode: manual
+name: toy_e6
+isotopes_file: isotopes.yaml
+isotopes: [Y-90, At-211]
+
+network:
+  service_min: 0
+  receiving_open: "00:00"
+
+operations:
+  lead_time_min: 120
+  qc_min: 60
+  production_window: ["00:00", "23:30"]
+  batch_slot_min: 30
+  dose_tolerance: 0.20
+  capacity_factor: 1.5
+  fleet_size: null
+  dispatch_per_slot: null
+
+manual:
+  speed_kmh: 40                 # only used to derive distances from travel times
+  hospitals:
+    - {id: H1, type: academic, eligible: [Y-90, At-211]}
+    - {id: H2, type: academic, eligible: [Y-90, At-211]}
+  travel_min:
+    nodes: [DEPOT, H1, H2]
+    matrix:
+      - [0, 30, 30]
+      - [30, 0, 30]
+      - [30, 30, 0]
+  patients:
+    - {id: P1, hospital: H1, isotope: At-211, dose_mbq: 200, time: "09:00"}
+    - {id: P2, hospital: H2, isotope: At-211, dose_mbq: 200, time: "13:00"}
+    - {id: P3, hospital: H1, isotope: Y-90,   dose_mbq: 200, time: "09:00"}
+    - {id: P4, hospital: H2, isotope: Y-90,   dose_mbq: 200, time: "13:00"}

@@ -1,0 +1,40 @@
+# Capacity-forced split (DESIGN_NOTES §5.7 validation 3):
+# 7 Pb-212 vials at one hospital, same treatment time, truck holds 6 (isotopes.yaml).
+# Expected: 2 trips both visiting H1. With a large capacity: 1 trip.
+mode: manual
+name: toy_split_capacity
+isotopes_file: isotopes.yaml
+isotopes: [Pb-212]
+
+network:
+  service_min: 0
+  receiving_open: "00:00"
+
+operations:
+  lead_time_min: 120
+  qc_min: 60
+  production_window: ["00:00", "23:30"]
+  batch_slot_min: 30
+  dose_tolerance: 0.20
+  capacity_factor: 1.5
+  fleet_size: null
+  dispatch_per_slot: null
+  turnaround_min: 0
+
+manual:
+  speed_kmh: 40
+  hospitals:
+    - {id: H1, type: academic, eligible: [Pb-212]}
+  travel_min:
+    nodes: [DEPOT, H1]
+    matrix:
+      - [0, 30]
+      - [30, 0]
+  patients:
+    - {id: P1, hospital: H1, isotope: Pb-212, dose_mbq: 200, time: "10:00"}
+    - {id: P2, hospital: H1, isotope: Pb-212, dose_mbq: 200, time: "10:00"}
+    - {id: P3, hospital: H1, isotope: Pb-212, dose_mbq: 200, time: "10:00"}
+    - {id: P4, hospital: H1, isotope: Pb-212, dose_mbq: 200, time: "10:00"}
+    - {id: P5, hospital: H1, isotope: Pb-212, dose_mbq: 200, time: "10:00"}
+    - {id: P6, hospital: H1, isotope: Pb-212, dose_mbq: 200, time: "10:00"}
+    - {id: P7, hospital: H1, isotope: Pb-212, dose_mbq: 200, time: "10:00"}

@@ -37,6 +37,10 @@ each open question an ID (`O#`) so later entries can reference them.
 | D23 | 2026-09-25 | Placeholder constants (incl. D17 demand, low-confidence params, m = 2) accepted provisionally; revisit only if one drives infeasibility or dominates results | User | E10 |
 | D24 | 2026-09-25 | **Manufacturing-side modelling deferred to a new Phase 7** (capacity, soft doses, sequencing, …). Batch timing stays as the routing output | User | E11 |
 | D25 | 2026-09-25 | Phase 2a MILP formulation fixed (DESIGN_NOTES §5.7): exact doses, dose-equivalent waste, one-sided batch linking, trips = patients | Claude (trimmed from the draft the user reviewed) | E11 |
+| D26 | 2026-09-25 | Phase 2a implemented; default weights w_over/w_dist/w_trip = 100/1/20; post-solve batch re-timing | Claude (delegated) | E12 |
+| D27 | 2026-09-25 | Keep 40 km/h average speed for now; conservative peak-hour speed is a later feature; time-dependent travel not needed | User | E14 |
+| D28 | 2026-09-25 | Visualise trips on numbered trucks/drivers via post-solve interval assignment (model unchanged) | User (request) / Claude (method) | E14 |
+| D29 | 2026-09-25 | Phase 2 work lives on branch `phase-2`; merged to `main` only when all of Phase 2 is done | User | E14 |
 
 ### Open questions
 
@@ -529,3 +533,90 @@ without carrying extra material they would have to memorise.
 DESIGN_NOTES status, §3, §5.4, §5.6 (dose equivalents), new §5.7, A6, A9,
 R17, new §10; `capacity_factor` config comment. The generator still
 computes `daily_cap_mbq` for Phase 7; no code changed.
+
+---
+
+## E12 — 2026-09-25 — Phase 2a implemented and validated
+
+**Handover.** A forked session ("evaluating manufacturing aspect") made
+D24–D25 with the user and pushed 45ed2b5. This session pulled it, confirmed
+sync, and became the main development session again. The fork agreed to
+make no further repo edits.
+
+**Built** (DESIGN_NOTES §5.7 implementation notes): `radvrp/model.py`
+(MILP C1–C11, weighted or lexicographic via Gurobi multi-objective),
+`radvrp/checker.py` (independent simulator/checker), `radvrp/report.py`
+(waste split), `scripts/solve.py`, route and schedule plots, two new toy
+configs, 17 new tests (40 in total, all passing).
+
+**D26 — defaults and one post-processing step (delegated).**
+- Default weights 100 per dose-equivalent / 1 per km / 20 per trip. Chosen
+  so the E6 toy reproduces the headline trade-off at default settings:
+  split At-211 (saves 0.65 doses = 65 > 40 km + 1 trip = 60) but not Y-90
+  (saves 0.05 doses = 5). Weights stay a tunable parameter (plan §5).
+- Batch re-timing: `B_k` isn't in the objective, so the solver may leave it
+  earlier than the route allows. After solving, each trip moves to its
+  latest feasible slot. This never breaks a deadline and never increases
+  waste.
+
+**Findings.**
+1. All hand-calculated toy results reproduced (At-211 total 559.9 MBq, not
+   560.0: 2 × 279.95).
+2. The model finds the isotope-dependent trade-off by itself: at default
+   weights it gives At-211 a second truck and consolidates Y-90.
+3. "Deadline-forced split" was a misnomer: nothing makes a single trip
+   infeasible, the split is waste-driven. Renamed "deadline-driven".
+4. `small`: 69% of waste is irreducible, 26% routing-induced, 5% from the
+   30-min slot grid. Routing controls about a quarter of the waste, which
+   is an honest framing for the interview.
+5. Deadline-driven splits appear at realistic scale (Pb-212 on `small`).
+6. Solve times: small 0.15 s, medium 0.38 s. `large` (≈13.5k variables)
+   needs the academic license (O10). Handled with a clear message rather
+   than a crash.
+
+---
+
+## E13 — 2026-09-25 — Road distances; schedule chart
+
+- **User observation:** travel uses straight-line geometry, not real road
+  distance, which is unrealistic. From the model's perspective only the
+  output changes; in production, swapping in real distances does the job.
+  *Clarified by Claude:* the matrix is great-circle × 1.3 circuity at
+  40 km/h (A3), an estimate of road distance, not raw displacement. The
+  user's point stands. Checked what a real road matrix would need:
+  asymmetry (one-way streets) is already supported by the model and
+  checker; shortest-path road times satisfy the triangle inequality the
+  split reasoning relies on; **time-dependent travel would be a model
+  change**, not a data swap. Maps directly onto Esri Network Analyst's
+  OD cost matrix (Phase 5). A3 updated.
+- **Schedule chart redesigned** at the user's request (first version was
+  hard to read). Now: rows ordered by departure, segments for QC/loading,
+  driving, stop, waiting, return. Stop labels alternate above/below and
+  include vials dropped and slack to the earliest deadline, with a bracket
+  from arrival to deadline.
+- *Finding surfaced by the chart:* on `small`, trip T3 reaches A02 with 4
+  min of slack, and T1 with 0 min (it leaves at the latest possible time
+  by design). Minimising waste pushes every batch as late as possible, so
+  **optimal plans are, by construction, the least robust to delay**. This
+  is a concrete input for the D9 robustness analysis (Phase 3).
+
+---
+
+## E14 — 2026-09-25 — Speed assumption, truck view, phase-2 branch
+
+- **D27 — Travel speed.** User doesn't need time-dependent travel and is
+  happy to be conservative. Idea for later: use an estimated *peak-hour*
+  average speed instead of a steady 40 km/h. That is one config value, so
+  a data change rather than a model change. For now 40 km/h stays
+  ("reasonable"). Recorded under R2.
+- **D28 — Truck view.** User asked for a way to show trips on concrete
+  trucks and drivers so a third person can read the plan, without changing
+  the model. Implemented as a post-solve assignment (`radvrp/fleet.py`),
+  greedy in departure order, which is optimal for interval graphs; it's
+  the same argument that will let 2b model the fleet cap without
+  trip→vehicle variables. New `schedule_by_truck.png`; route map labels
+  trips with their truck. On `small`: 5 trips on 3 trucks (preview of what
+  the 2b fleet cap will constrain).
+- **D29 — Branching.** Phase 2 work is committed to a new branch
+  `phase-2`; the user merges to `main` only after the whole of Phase 2
+  (2a + 2b) is complete.

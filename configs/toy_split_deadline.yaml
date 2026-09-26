@@ -1,0 +1,37 @@
+# Deadline-driven split (DESIGN_NOTES §5.7 validation 4):
+# one hospital, At-211 patients at 08:00 and 15:00. One trip must arrive by 06:00,
+# so the 15:00 vial would be made ~7 h too early (x1.96 activity). Nothing makes a
+# single trip infeasible -- the split is driven by waste, not forced by feasibility.
+# Expected: waste-weighted -> 2 trips to H1; distance/trip-weighted -> 1 trip.
+mode: manual
+name: toy_split_deadline
+isotopes_file: isotopes.yaml
+isotopes: [At-211]
+
+network:
+  service_min: 0
+  receiving_open: "00:00"
+
+operations:
+  lead_time_min: 120
+  qc_min: 60
+  production_window: ["00:00", "23:30"]
+  batch_slot_min: 30
+  dose_tolerance: 0.20
+  capacity_factor: 1.5
+  fleet_size: null
+  dispatch_per_slot: null
+  turnaround_min: 0
+
+manual:
+  speed_kmh: 40
+  hospitals:
+    - {id: H1, type: academic, eligible: [At-211]}
+  travel_min:
+    nodes: [DEPOT, H1]
+    matrix:
+      - [0, 30]
+      - [30, 0]
+  patients:
+    - {id: P1, hospital: H1, isotope: At-211, dose_mbq: 200, time: "08:00"}
+    - {id: P2, hospital: H1, isotope: At-211, dose_mbq: 200, time: "15:00"}

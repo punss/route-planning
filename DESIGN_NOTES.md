@@ -301,13 +301,62 @@ global constant, because tighter M means a tighter LP relaxation.
 2. Toy E6, distance/trip-heavy weights → 2 trips; 691.1 and 424.6 MBq.
 3. Capacity-forced split: 7 Pb-212 vials at one hospital, Q = 6 → split.
    Same data, large Q → no split.
-4. Deadline-forced split: one hospital with 08:00 and 15:00 patients.
+4. Deadline-driven split: one hospital with 08:00 and 15:00 patients. (Renamed
+   from "deadline-forced": nothing makes one trip infeasible; the split is
+   driven by waste, so it appears only when waste is weighted enough.)
 5. **Independent solution checker:** recomputes every arrival time,
    deadline and activity from the routes alone, without the MILP, and
    checks all rules. It catches formulation bugs that the solver would
    report as "optimal".
 6. **Waste report** per solution: irreducible (lead time + QC + direct
    drive) / discretization (rounding to slots) / routing-induced.
+
+**Implementation notes (Phase 2a, E12)**
+- Code: `radvrp/model.py` (MILP), `radvrp/checker.py` (independent
+  simulator + checker), `radvrp/report.py` (trip table, waste split),
+  `scripts/solve.py` (CLI), plots in `radvrp/viz.py` (routes, schedule).
+- *Batch re-timing.* `B_k` does not appear in the objective; only the vials'
+  slots `u_ps` do, and those are capped by `B_k`. So a solver can leave `B_k`
+  earlier than the route allows without changing the objective. After
+  solving, each trip's batch is moved to its latest feasible slot (backward
+  pass of §5.2). This never breaks a deadline and never increases waste.
+- *Independent checker.* It recomputes departure, arrivals (with waiting
+  for hot-lab hours), deadlines, capacity, eligibility, grid, distance and
+  activity from the trip list alone. It also flags a solver claim of less
+  activity than physics requires. Tests break good plans on purpose (drop a
+  vial, duplicate one, late batch, off-grid batch, wrong isotope, capacity,
+  fake activity) and require the checker to catch each one.
+- *Waste split* per vial: irreducible `LB_p − x_p`; routing
+  `x_p·μ(P*_k) − LB_p`; discretization `x_p·μ(B_k) − x_p·μ(P*_k)`, where
+  `P*_k` is the trip's latest continuous batch time. All three are ≥ 0 and
+  sum to total waste (tested).
+- *Truck view for presentation (D28).* `radvrp/fleet.py` assigns trips to
+  numbered trucks (and drivers) after solving. It goes in order of
+  departure and reuses any truck that is back and turned around. For
+  interval graphs this greedy rule is optimal, so the truck count equals
+  the peak overlap (tested against an independent sweep-line count). The
+  model is unchanged. Plots: `schedule_by_truck.png` (for a third-party
+  reader), `schedule_by_trip.png` (includes batch → QC), `routes.png`
+  (trips labelled with their truck). On `small`, 5 trips need 3 trucks.
+
+**Results (Phase 2a)**
+
+| Case | Result |
+|---|---|
+| E6, waste-heavy | 4 trips; At-211 559.9 MBq (2 × 279.95), Y-90 415.4 = lower bound ✓ |
+| E6, route-heavy | 2 trips; 691.1 / 424.6 MBq ✓ |
+| E6, default weights (100 / 1 / 20) | At-211 split into 2 trips, Y-90 consolidated into 1: the isotope-dependent trade-off, found by the model ✓ |
+| Capacity split (7 vials, Q = 6) | 2 trips to H1; with Q = 20, 1 trip ✓ |
+| Deadline-driven split | waste-heavy → 2 trips; route-heavy → 1 ✓ |
+| small | optimal, 0.15 s, 658 vars / 819 constraints; checker PASS |
+| medium | optimal, 0.38 s, 806 vars / 955 constraints; checker PASS |
+| large | 13,471 vars / 15,534 constraints: exceeds restricted license (O10) |
+
+Waste on `small` at default weights: 5.48 dose-eq in total, of which
+irreducible 3.78 (69%), routing 1.42 (26%), discretization 0.29 (5%). Routing
+controls roughly a quarter of the waste; the 30-min slot grid costs about
+5%. Pb-212 shows deadline-driven splits at realistic scale: two trips each
+visit A01 and A02, one with an early batch, one with a late batch.
 
 **Size** (restricted Gurobi license: ≤ 2,000 variables and constraints)
 
@@ -375,7 +424,7 @@ revisit.
 |---|---|---|---|
 | A1 | Single depot, single metro | Scope (plan §3–4) | Multi-site networks, inter-city supply |
 | A2 | Deterministic decay, demand, travel | Decay truly is deterministic; others are simplified for Phase 2 | No-shows, traffic, QC failures (R1–R3) |
-| A3 | Great-circle × circuity travel, time-invariant | No road data until Phase 5 | Rush hour, bridges/tunnels, harbour |
+| A3 | Great-circle × circuity travel, time-invariant | No road data until Phase 5. Swapping in a real road matrix is a **data change**: the model and checker already handle asymmetric matrices, and shortest-path road times keep the triangle inequality. **Time-dependent** travel (rush hour) would be a **model change** | Rush hour, bridges/tunnels, harbour |
 | A4 | One isotope per truck | Plan §3 (shielding/regulatory separation) | Mixed-load packaging becomes allowed |
 | A5 | One production batch per truck, finish time free within window | Makes routing drive production (D13) | Real hot cells run batches in sequence; limited runs per day |
 | A6 | No explicit synthesis-line sequencing; the shared dispatch limit `m` caps batches finishing per slot (D20) | Manufacturing deferred to Phase 7 (D24) | Syntheses take longer than a slot and block the line |
@@ -400,7 +449,7 @@ necessarily solved.
 | ID | Issue | Effect on this model |
 |---|---|---|
 | R1 | Patient no-shows / cancellations after the plan (2 days ahead) or after production | Wasted short-lived product; deterministic model can't hedge |
-| R2 | Boston morning traffic; time-dependent travel | Deadlines may be missed; circuity × constant speed is optimistic in rush hour |
+| R2 | Boston morning traffic; time-dependent travel | Deadlines may be missed; circuity × constant speed is optimistic in rush hour. **Planned later feature (D27):** a conservative peak-hour average speed instead of the steady 40 km/h. It's a data change (one config value), so no model change. Fully time-dependent travel would be a model change and isn't planned |
 | R3 | QC release time varies; a batch can fail release (out-of-spec) | No backup batch in the model; a failed At-211 batch likely means cancelled treatments |
 | R4 | Production runs are sequential on real equipment | Several batches finishing at the same time may be physically impossible (A6) |
 | R5 | Y-90 microspheres are in reality produced centrally, often weekly, with vials calibrated to a reference day (hospitals choose larger vials later in the week) | Daily local Y-90 production is unrealistic; Pb-212 (generator-based, regional) and At-211 (cyclotron, local) fit this model far better |

@@ -51,7 +51,7 @@ Manufacturers usually fix concentration and vary volume (e.g. Pluvicto:
 | `H` | Hospitals; node `0` is the depot; `V = {0} ∪ H` |
 | `E ⊆ H × I` | Eligibility: hospital h can administer isotope i |
 | `P` | Patients; `P_i` those needing isotope i; `P_{h,i}` those at h needing i |
-| `K_i` | Candidate trucks (= routes = production batches) for isotope i |
+| `K_i` | Candidate trips for isotope i (1 trip = 1 route = 1 production batch; a vehicle may do several trips, D21) |
 | `S` | Batch-finish time slots `{P_min, P_min+Δ, …, P_max}` |
 
 ### Parameters
@@ -71,7 +71,9 @@ Manufacturers usually fix concentration and vary volume (e.g. Pluvicto:
 | `t_{uv}`, `d_{uv}` | Travel time (min) and distance (km), u,v ∈ V | §4 |
 | `σ_h` | Service time at hospital (receipt, survey, paperwork) | 15 min |
 | `e_h` | Hospital's earliest receiving time (hot-lab opens) | 06:00 |
-| `K`, `m_s` | Fleet cap, dispatch capacity per slot — **placeholders, O2** | unset |
+| `K` | Fleet cap: max trips on the road at once (optional, D19) | unset (off) |
+| `m` | Dispatch limit: trucks loaded/released per slot, shared across isotopes (D20) | 2 |
+| `ρ` | Depot turnaround between trips (unload, survey, reload) (D21) | 30 min |
 
 ### Derived per patient
 - Deadline: `δ_p = τ_p − ℓ` (vial must arrive by then).
@@ -178,10 +180,43 @@ The daily cap is set relative to this bound, `C_i = κ · LB_i`, so tightness
 is comparable across instance sizes. κ < 1 is provably infeasible; κ = 1.5
 is loose; κ ≈ 1.1 forces consolidation to be efficient.
 
-### 5.5 Objectives (plan §5; weighting left open)
+### 5.5 Shared resources: fleet, dispatch, multi-trip (D19–D21)
+These are the only constraints linking the isotopes. Without them the
+problem splits into one independent problem per isotope.
+
+- **Trip interval.** Trip k occupies a vehicle from departure `P_k + q`
+  until it returns and finishes turnaround:
+  `[P_k + q, P_k + q + D_k + ρ)`, where `D_k` is the route duration.
+- **Fleet cap (multi-trip).** For every time slot t:
+  `#{trips k active at t} ≤ K`.
+  *Why this is exact:* vehicles are identical and every trip starts and
+  ends at the depot, so trips form an interval graph. The minimum number of
+  vehicles needed = the maximum number of overlapping intervals.
+  Assigning trips to vehicles greedily by start time achieves it. So no
+  trip→vehicle variables are needed; the vehicle schedule is recovered
+  after solving. Drivers work the same way.
+- **Dispatch limit.** For every slot s: `#{trips with P_k = s} ≤ m`,
+  summed over **all** isotopes (one loading dock). Second trips count too:
+  every departure needs a dock slot.
+- **Effect.** Both constraints make isotopes compete. The model should give
+  late (low-decay) slots and extra vehicles to the isotope with the most to
+  lose from decay. The dual values of these constraints price one more
+  vehicle / one more dock slot in MBq of avoided waste.
+- **Toy check (one vehicle, E6 data):** without multi-trip, K = 1 is
+  infeasible (two isotopes, single-isotope trips). With multi-trip, 4
+  trips: At-211 at its lower bound (560 MBq), Y-90 trips moved earlier
+  (422 vs 415 MBq). Planned as a Phase 2b test.
+- **Column-generation view (candidate for Phase 4).** Fleet, dispatch and
+  production-cap constraints are the linking rows of a Dantzig–Wolfe
+  master over trips. Pricing is one subproblem per (isotope, batch slot).
+  With the slot fixed, each patient's production cost is a constant, so
+  pricing is a standard elementary shortest path with time windows. The
+  exponential nonlinearity disappears.
+
+### 5.6 Objectives (plan §5; weighting left open)
 1. Over-production: `Σ_p (produced_p − x_p)`, reported split per §5.4.
 2. Total distance.
-3. Number of trucks/routes.
+3. Number of vehicles, i.e. peak simultaneous trips (with multi-trip, not the number of trips).
 
 The worked example in TIMELINE.md E6 shows these objectives genuinely
 conflict for At-211, and barely conflict for Y-90.
@@ -246,14 +281,14 @@ revisit.
 | A3 | Great-circle × circuity travel, time-invariant | No road data until Phase 5 | Rush hour, bridges/tunnels, harbour |
 | A4 | One isotope per truck | Plan §3 (shielding/regulatory separation) | Mixed-load packaging becomes allowed |
 | A5 | One production batch per truck, finish time free within window | Makes routing drive production (D13) | Real hot cells run batches in sequence; limited runs per day |
-| A6 | Batches of the same drug can overlap in time | Keep manufacturing simple (plan §1) | Single synthesis module per isotope |
+| A6 | No explicit synthesis-line sequencing; the shared dispatch limit `m` caps batches finishing per slot (D20) | Keep manufacturing simple (plan §1) | Syntheses take longer than a slot and block the line |
 | A7 | Unit doses, one vial per patient (D14) | Matches therapeutic practice | Bulk/multi-dose supply to hospital pharmacies |
 | A8 | Capacity = vial count per isotope (D15) | Simplest per-isotope capacity | Radiation-based (transport index) limits bind first |
 | A9 | Daily cap in MBq, per isotope, not shared (plan §3) | Lightweight | Shared cyclotron/beam time across isotopes |
 | A10 | τ_p fixed by clinic (D3) | Realistic, and keeps the coupling clean | Clinics re-schedule around deliveries |
 | A11 | Fixed lead time ℓ and QC time q | Simplicity | Variable QC time; per-hospital prep times |
 | A12 | No storage cost at hospital (O6 open) | Not yet decided | Hot-lab space/shielding limited |
-| A13 | No fleet cap, no dispatch limit, no multi-trip (O2, O5 open) | Deferred | Discussed before Phase 2 |
+| A13 | Vehicles and drivers are interchangeable; any vehicle can carry any isotope (shielding is in the packages) (D21) | Makes the interval-overlap fleet count exact (§5.5) | Isotope-specific vehicles → apply §5.5 per vehicle class |
 | A14 | A2 treated as a per-vial check, expected non-binding | Doses ≪ A2 (§8 of summary output) | Consolidated bulk shipments |
 | A15 | Same-day horizon; plan fixed 2 days ahead | Plan §3 | Cancellations after production (R1) |
 | A16 | **Future-adoption demand:** alpha therapies (Pb-212, At-211) at routine volumes | At today's (mostly trial) volumes an instance has ~1 At-211 patient, which makes the most decay-sensitive isotope trivial to route | Calibrating to current real volumes — then At-211 routing is near-trivial |
@@ -281,6 +316,8 @@ necessarily solved.
 | R12 | Weight-based doses need current patient weight; prescriptions change | Demand data 2 days ahead may be stale |
 | R13 | Clinic delays: late treatment ⇒ patient receives less than prescribed | Delay budget `ln(x_p/L_p)/λ`: Y-90 ≈ 20.6 h, Pb-212 ≈ 3.4 h, At-211 ≈ 2.3 h (D9) |
 | R14 | Crude coastline mask, synthetic hospital locations | Distances plausible in scale only |
+| R15 | Driver hours-of-service limits, shift changes, breaks | Not modelled (D21). A ~03:00–15:00 operating day is within federal limits, and drivers are interchangeable |
+| R16 | Returning trucks and outgoing trucks compete for the dock; unloading may need its own dock time | Only departures consume dock capacity in the model; unloading is folded into turnaround ρ |
 
 ---
 

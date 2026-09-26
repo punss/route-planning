@@ -69,11 +69,10 @@ present but simple; do not over-engineer that part.
   **every** vial on board. Minimising over-production therefore pushes
   toward trucks carrying patients with similar treatment times on short
   routes — in direct tension with minimising distance and vehicle count.
-- **Simplification:** batches for the same drug may finish at any time,
-  including simultaneously. There is no production-line sequencing (one
+- **Simplification:** there is no explicit production-line sequencing (one
   hot cell running one synthesis at a time). This is deliberately left out
-  per §1; a limit on batches per time slot is a natural extension (linked
-  to depot dispatch limits, TIMELINE.md O2).
+  per §1. The shared **dispatch limit** (§3) caps how many batches can
+  finish per time slot, which covers the main effect (TIMELINE.md D20).
 - **Manufacturing ceiling**: research and apply a real regulatory ceiling on
   producible/transportable activity per shipment — specifically the
   isotope-specific "A2 quantity" limits used in NRC/DOT Type A package
@@ -99,8 +98,24 @@ present but simple; do not over-engineer that part.
 ## 3. Fleet & Routing Structure
 
 - Single depot (one manufacturing/production site).
-- A single truck carries only one isotope/drug (no mixed loads); multiple
-  trucks may carry the same drug.
+- Each **trip** carries only one isotope/drug (no mixed loads); multiple
+  trips may carry the same drug.
+- **Multi-trip vehicles** (TIMELINE.md D21): a vehicle returns to the
+  depot, takes a **30-min turnaround** (unload, contamination survey,
+  reload), and can leave again with the next batch, possibly a different
+  isotope. Confirmed as expected practice by an industry contact.
+- **Fleet cap** `K` (TIMELINE.md D19): optional hard limit on vehicles. With
+  identical vehicles and depot-based trips, the minimum number of vehicles
+  equals the maximum number of trips on the road at once (turnaround
+  included), so the cap is "≤ K trips active in every time slot". No
+  trip→vehicle assignment is modelled; it is recovered afterwards.
+- **Drivers are interchangeable** (D21): equally qualified, need not stay
+  with one vehicle. Like vehicles, they only matter as a count; if drivers
+  are scarcer than vehicles, `K` is the smaller of the two.
+- **Dispatch limit** `m` (TIMELINE.md D20): at most `m` trucks can be loaded
+  and released per time slot at the depot's loading dock, **shared across
+  isotopes**. Because departure = batch finish + QC time, this is also a
+  limit on batches finishing per slot.
 - Homogeneous vehicles for now (same speed across all trucks) —
   flagged as a simplification that may be revisited later based on
   real-world input. **Truck capacity is set per isotope** (revised

@@ -30,21 +30,27 @@ each open question an ID (`O#`) so later entries can reference them.
 | D16 | 2026-09-24 | Phase 1 started (user approval); Python 3.12 venv + Gurobi 13.0.3 | User | E7 |
 | D17 | 2026-09-24 | Future-adoption demand scenario for alpha therapies (assumption A16) | Claude (delegated) — flagged for user review | E7 |
 | D18 | 2026-09-25 | Use restricted Gurobi license until campus activation; project put under git | User | E8 |
+| D19 | 2026-09-25 | Fleet cap K as an optional hard constraint: ≤ K trips on the road at once | User (implied by D21) / Claude | E9 |
+| D20 | 2026-09-25 | Dispatch limit m per slot, **shared across isotopes** (loading dock); default m = 2 | User | E9 |
+| D21 | 2026-09-25 | Multi-trip vehicles; isotope may change between trips; 30-min turnaround; vehicles and drivers interchangeable | User (industry-confirmed) | E9 |
+| D22 | 2026-09-25 | Phase 2 staged: 2a core model → 2b fleet/dispatch/multi-trip | User | E10 |
+| D23 | 2026-09-25 | Placeholder constants (incl. D17 demand, low-confidence params, m = 2) accepted provisionally; revisit only if one drives infeasibility or dominates results | User | E10 |
 
 ### Open questions
 
 | ID | Opened | Question | Status |
 |----|------------|----------------------------------------------------------------------|--------|
 | O1 | 2026-09-23 | Fixed production end + fixed administration times ⇒ decay is route-independent. How do we restore the decay↔routing coupling? | Closed 2026-09-24 → D11 (coupling via arrival time dropped; see O7) |
-| O2 | 2026-09-23 | Fleet-size cap and depot dispatch limits as cross-drug coupling (Dantzig–Wolfe structure) | Scoped, deferred — user wants to discuss |
+| O2 | 2026-09-23 | Fleet-size cap and depot dispatch limits as cross-drug coupling (Dantzig–Wolfe structure) | Closed 2026-09-25 → D19, D20 |
 | O3 | 2026-09-23 | Dose target within the tolerance band (lower / nominal / upper) | Closed 2026-09-24 → D8 |
 | O4 | 2026-09-23 | How to model A2 (per-package) limits and real truck capacity | Closed 2026-09-24 → D12 (capacity *unit* still open → O8) |
-| O5 | 2026-09-23 | Can a truck make multiple trips (possibly with different isotopes)? | Open — raised with O2 |
+| O5 | 2026-09-23 | Can a truck make multiple trips (possibly with different isotopes)? | Closed 2026-09-25 → D21 |
 | O6 | 2026-09-24 | Storage at the hospital has a (not necessarily monetary) cost: hot-lab space, shielding, staffing | Open — user wants to think about it |
 | O7 | 2026-09-24 | D11 removes the plan's stated core question (decay↔routing coupling) and the reason for time-slot discretization. How should plan.md §2 tractability note and Phases 3–4 be reframed? | Closed 2026-09-24 → D13 (framing restored; slots kept, moved to batch time) |
 | O8 | 2026-09-24 | Truck capacity unit: package count vs. activity/radiation (TI) on board at departure | Closed 2026-09-24 → D15 |
 | O9 | 2026-09-24 | Packaging model: per-patient unit doses vs. a shared bulk vial per hospital | Closed 2026-09-24 → D14 |
 | O10 | 2026-09-24 | Activate Gurobi academic license (only restricted pip license active) | Open — user needs campus network; restricted license in use meanwhile (E8) |
+| O11 | 2026-09-25 | Phase 2 staging: 2a core model (no linking constraints) → 2b add fleet/dispatch/multi-trip | Closed 2026-09-25 → D22 |
 
 ---
 
@@ -403,3 +409,69 @@ open-source MILP solver (HiGHS) has no size limit, at some speed cost.
 design notes, configs, `radvrp/` package and tests. Generated data,
 plots, `.venv` and license files are git-ignored (they are reproducible
 from configs and seeds).
+
+---
+
+## E9 — 2026-09-25 — Shared resources: fleet cap, dispatch, multi-trip
+
+**Context.** Claude laid out O2 (fleet cap + dispatch limit) and O5
+(multi-trip). Core point: without a shared resource, the three-isotope
+problem is just three independent problems. These constraints are what
+make the isotopes compete.
+
+**Decisions.**
+- **D20 — Dispatch limit shared across isotopes.** User's reasoning:
+  whatever the synthesis lines can produce, the loading dock has a fixed
+  number of bays, so at most m trucks load per slot. Since departure = batch
+  finish + QC, this also caps batches finishing per slot. It effectively
+  acts as a manufacturer-side throughput constraint and replaces
+  simplification A6's "unlimited simultaneous batches". Default m = 2 per
+  30-min slot (low confidence).
+- **D21 — Multi-trip vehicles.** An industry contact confirmed multi-trip is
+  expected practice. Isotope may change between trips (one isotope *per
+  trip*). Turnaround 30 min. Drivers, like vehicles, are interchangeable
+  and need not stay with one vehicle, so hours-of-service is out of scope
+  (R15).
+- **D19 — Fleet cap** kept as an optional hard constraint (off by default).
+  Only meaningful together with D21.
+
+**Key modelling result (Claude).** Vehicles and drivers are identical and
+every trip starts and ends at the depot, so trips form an *interval graph*:
+the minimum fleet = the maximum number of trips overlapping in time
+(turnaround included), and greedy assignment by start time achieves it.
+The fleet cap is therefore "≤ K trips active per slot", with no
+trip→vehicle assignment variables. This avoids the usual difficulty of
+multi-trip VRP formulations. Vehicle and driver schedules are recovered
+after solving. Written up in DESIGN_NOTES §5.5.
+
+**Planned test (Phase 2b).** E6 toy with one vehicle: infeasible without
+multi-trip; with multi-trip, 4 trips, At-211 at its lower bound (560 MBq),
+Y-90 moved earlier (422 vs 415 MBq). The model should favour the
+short-lived isotope without being told to.
+
+**Updated:** plan.md §2–3; DESIGN_NOTES §3 parameters, new §5.5,
+objective 3 now counts vehicles (peak simultaneous trips) rather than
+trips, assumptions A6/A13, issues R15–R16; `turnaround_min` added to
+config and `Operations`.
+
+---
+
+## E10 — 2026-09-25 — Fleet-cap semantics, parameters, staging
+
+- **Fleet cap semantics clarified.** User's first reading was "at most K
+  dispatches per slot". Claude pointed out that this is weaker than what a
+  K-truck fleet implies. Trips last longer than one slot, so trucks
+  dispatched earlier may still be on the road. Example: K = 2, trips of
+  2 h; dispatching 2 at 05:00 and 2 more at 05:30 satisfies "≤ 2 per slot"
+  but needs 4 trucks. The correct rule (DESIGN_NOTES §5.5): **trips on the
+  road (including turnaround) ≤ K in every slot**. Dispatches per slot are
+  then bounded by K minus trucks already out, and separately by the dock
+  limit m. **User confirmed** this is what they meant ("max K dispatches in
+  any slot, contingent on availability").
+- **m is a configurable parameter** (not a decision variable), expected to
+  be one of the most influential constraints and swept in Phase 3.
+- **D22:** two-stage Phase 2 accepted.
+- **D23:** all placeholder constants accepted provisionally. They are
+  config values, and none is structural. Revisit only if one turns out to
+  drive infeasibility or dominate results. Older open items (O6 storage
+  cost, O10 license) stay open.

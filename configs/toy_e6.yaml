@@ -21,6 +21,7 @@ operations:
   capacity_factor: 1.5
   fleet_size: null
   dispatch_per_slot: null
+  turnaround_min: 0
 
 manual:
   speed_kmh: 40                 # only used to derive distances from travel times

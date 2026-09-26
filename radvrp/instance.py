@@ -39,8 +39,9 @@ class Operations:
     batch_slot_min: int
     dose_tolerance: float
     capacity_factor: float
-    fleet_size: int | None = None          # O2 placeholder
-    dispatch_per_slot: int | None = None   # O2 placeholder
+    fleet_size: int | None = None          # D19: max trips active at once (None = no cap)
+    dispatch_per_slot: int | None = None   # D20: departures per slot, shared across isotopes
+    turnaround_min: int = 30               # D21: depot turnaround between trips
 
     @property
     def batch_slots(self) -> list[int]:

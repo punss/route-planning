@@ -64,6 +64,7 @@ def _operations(cfg: dict) -> Operations:
         prod_start_min=start, prod_end_min=end, batch_slot_min=o["batch_slot_min"],
         dose_tolerance=o["dose_tolerance"], capacity_factor=o["capacity_factor"],
         fleet_size=o.get("fleet_size"), dispatch_per_slot=o.get("dispatch_per_slot"),
+        turnaround_min=o.get("turnaround_min", 30),
     )
 
 

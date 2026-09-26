@@ -5,9 +5,11 @@ assumptions and parameter choices**. `plan.md` holds the project brief;
 `TIMELINE.md` holds the history of how each decision here was reached (the
 `D#` / `O#` IDs refer to it).
 
-Status: **Phase 1 (data generator)**. Formulation sections are written so
-Phase 2 can build on them directly. Decision variables are sketched but not
-finalised.
+Status: **Phase 1 complete; Phase 2a formulation fixed (§5.7).**
+Manufacturing-side modelling is deferred to **Phase 7** and collected in §10
+(D24). Phases 2–6 treat the manufacturer as a customer of the routing
+output: each trip hands over a production order (isotope, ready-by time,
+activity per vial).
 
 ---
 
@@ -60,10 +62,10 @@ Manufacturers usually fix concentration and vary volume (e.g. Pluvicto:
 | `T½_i`, `λ_i = ln2 / T½_i` | Half-life, decay constant | §6 |
 | `A2_i` | Type A package limit (per vial here) | 49 CFR 173.435 |
 | `Q_i` | Vials per truck for isotope i | §6 (assumption) |
-| `C_i` | Daily production cap, isotope i (MBq) | `κ · LB_i` (§5.4) |
+| `C_i` | Daily production cap, isotope i (MBq) — **Phase 7 only** (§10) | `κ · LB_i` (§5.4) |
 | `h(p)`, `i(p)` | Patient p's hospital and isotope | generated |
 | `x_p` | Prescribed activity | §6 dose models |
-| `[L_p, U_p]` | Tolerance band = `[(1−β)x_p, (1+β)x_p]` | β = 0.20 (D4) |
+| `[L_p, U_p]` | Tolerance band = `[(1−β)x_p, (1+β)x_p]`. Phases 2–6: robustness analysis only; Phase 7: constraint (§10) | β = 0.20 (D4) |
 | `τ_p` | Clinic-scheduled treatment time (fixed input, D3) | generated |
 | `ℓ` | Lead time: vial on site ≥ ℓ before τ_p | 120 min (D11) |
 | `q` | QC/release + packaging time between batch finish and departure | 60 min |
@@ -80,13 +82,10 @@ Manufacturers usually fix concentration and vary volume (e.g. Pluvicto:
 - Production multiplier for a batch finishing at time `P`:
   `μ_p(P) = exp(λ_{i(p)} · (τ_p − P))`, so produced activity = `x_p · μ_p(P)`.
 
-### Decision variables (sketch — finalised in Phase 2)
-- Routing: which hospitals truck k visits, in what order.
-- Assignment: which patients' vials ride on truck k (enables split
-  deliveries, D5).
-- Batch time: `P_k ∈ S` (discretized, §5.3).
-- Delivered activity `y_p ∈ [L_p, U_p]` with deviation `|y_p − x_p|`
-  penalised (soft target, D8).
+### Decision variables
+Fixed for Phase 2a in §5.7. In short: routes, vial→trip assignment and
+batch time per trip. Every patient receives exactly `x_p` in Phases 2–6.
+The soft dose target (D8) belongs to Phase 7 (§10).
 
 ---
 
@@ -176,9 +175,8 @@ optimisation claims honest.
 2 h lead time alone costs ~21%.** In a real deployment, cutting lead time
 or QC time may be worth more than any routing improvement (R3, R7).
 
-The daily cap is set relative to this bound, `C_i = κ · LB_i`, so tightness
-is comparable across instance sizes. κ < 1 is provably infeasible; κ = 1.5
-is loose; κ ≈ 1.1 forces consolidation to be efficient.
+*(Phase 7)* A daily cap can be set relative to this bound,
+`C_i = κ · LB_i`, so tightness is comparable across instance sizes (§10).
 
 ### 5.5 Shared resources: fleet, dispatch, multi-trip (D19–D21)
 These are the only constraints linking the isotopes. Without them the
@@ -206,20 +204,119 @@ problem splits into one independent problem per isotope.
   infeasible (two isotopes, single-isotope trips). With multi-trip, 4
   trips: At-211 at its lower bound (560 MBq), Y-90 trips moved earlier
   (422 vs 415 MBq). Planned as a Phase 2b test.
-- **Column-generation view (candidate for Phase 4).** Fleet, dispatch and
-  production-cap constraints are the linking rows of a Dantzig–Wolfe
+- **Column-generation view (candidate for Phase 4).** Fleet and dispatch
+  constraints (plus, in Phase 7, production caps) are the linking rows of a Dantzig–Wolfe
   master over trips. Pricing is one subproblem per (isotope, batch slot).
   With the slot fixed, each patient's production cost is a constant, so
   pricing is a standard elementary shortest path with time windows. The
   exponential nonlinearity disappears.
 
 ### 5.6 Objectives (plan §5; weighting left open)
-1. Over-production: `Σ_p (produced_p − x_p)`, reported split per §5.4.
+1. Over-production (decay waste caused by batch timing), in **dose
+   equivalents**: `Σ_p (produced_p − x_p) / x_p`. Reported split per §5.4.
 2. Total distance.
-3. Number of vehicles, i.e. peak simultaneous trips (with multi-trip, not the number of trips).
+3. Number of vehicles, i.e. peak simultaneous trips (with multi-trip, not
+   the number of trips). In Phase 2a, where fleet is not yet modelled, this
+   is the number of trips.
 
 The worked example in TIMELINE.md E6 shows these objectives genuinely
 conflict for At-211, and barely conflict for Y-90.
+
+*Why dose equivalents, not MBq:* a Y-90 dose is ~10× the MBq of a Pb-212 or
+At-211 dose, so summing MBq would let Y-90 dominate once isotopes compete
+(2b). One "extra dose" means the same thing for every isotope. Isotope
+costs per MBq could replace this in Phase 7.
+
+### 5.7 Phase 2a MILP (D25)
+Scope: routing, vial→trip assignment and batch timing. No shared
+resources (fleet, dispatch → 2b) and no manufacturing constraints
+(→ Phase 7). Without shared resources the model splits by isotope, but it
+is built as one model because 2b needs that.
+
+**Sets and constants** (per isotope i)
+
+| Symbol | Meaning |
+|---|---|
+| `H_i`, `N_i = {0} ∪ H_i` | hospitals with ≥ 1 patient for i; plus depot |
+| `K_i = {1…|P_i|}` | candidate trips. One per patient, so "every vial on its own truck" (the §5.4 lower bound) is representable |
+| `S_p = {s ∈ S : s ≤ P^direct_p}` | slots at which p could still be served on time |
+| `c_ps = x_p·exp(λ_i(τ_p − s))`, `μ_ps = c_ps / x_p` | activity to produce (absolute, per unit dose) |
+| `δ_p = τ_p − ℓ` | per-vial deadline |
+
+**Variables**
+
+| Variable | Type | Meaning |
+|---|---|---|
+| `x_uvk` | binary | trip k drives u → v |
+| `y_k` | binary | trip k is used |
+| `z_pk` | binary | p's vial rides on trip k |
+| `a_hk` | continuous ∈ [e_h, max deadline at h] | arrival of trip k at h |
+| `n_k` | integer ∈ {0,…,|S|−1} | batch slot index; `B_k = P_min + Δ·n_k` |
+| `u_ps` | binary | p's vial is produced at slot s |
+
+Produced activity (expression): `A_p = Σ_s c_ps·u_ps`.
+
+**Objective (weighted form; hierarchical form is a config switch via
+Gurobi multi-objective)**
+
+```
+min  w_over · Σ_p ( Σ_s μ_ps·u_ps − 1 )  +  w_dist · Σ d_uv·x_uvk  +  w_trip · Σ y_k
+```
+
+**Constraints**
+
+```
+(C1)  Σ_k z_pk = 1                                  ∀p     every vial on exactly one trip
+(C2)  z_pk ≤ Σ_u x_{u,h(p),k}                       ∀p,k   only on a trip that visits its hospital
+(C3)  Σ_p z_pk ≤ Q_i · y_k                          ∀k     vial capacity per isotope (D15)
+(C4)  Σ_v x_0vk = y_k,  Σ_u x_u0k = y_k             ∀k     used trip leaves and returns once
+(C5)  Σ_u x_uhk = Σ_v x_hvk ≤ 1                     ∀h,k   flow conservation; ≤ 1 visit per trip
+(C6)  a_hk ≥ B_k + q + t_0h − M(1 − x_0hk)          ∀h,k   first stop
+(C7)  a_vk ≥ a_uk + σ_u + t_uv − M(1 − x_uvk)       ∀u≠v∈H_i,k   later stops (also removes subtours)
+(C8)  a_{h(p),k} ≤ δ_p + M(1 − z_pk)                ∀p,k   per-vial deadline
+(C9)  Σ_{s∈S_p} u_ps = 1                            ∀p     one production slot per vial
+(C10) Σ_s s·u_ps ≤ B_k + M(1 − z_pk)                ∀p,k   vial not produced later than its trip's batch
+(C11) y_k ≥ y_{k+1}                                 ∀k     symmetry breaking (identical trips)
+```
+
+Waiting is allowed (arrival constraints are ≥). Every big-M is set per
+constraint from data bounds (latest deadline, window width), not one
+global constant, because tighter M means a tighter LP relaxation.
+
+**Design choices**
+1. *Exact prescribed dose.* Delivering more only adds waste; delivering
+   less is a clinical decision the routing layer doesn't make. The band is
+   used for robustness analysis (delay budgets), not as a decision.
+2. *C10 is one-sided.* Producing a vial earlier than its trip's batch only
+   increases production, so the objective never chooses it. "No later
+   than" is enough and halves the linking constraints.
+3. *Split deliveries are neither forced nor forbidden* (D5). Vials are
+   assigned individually and several trips may visit one hospital.
+4. *Batch slots* are the §5.3 discretization. The trip's batch time is an
+   integer slot index; the per-vial `u_ps` looks up the exponential.
+
+**Validation plan**
+1. Toy E6, waste-heavy weights → 4 trips; At-211 560.0 MBq, Y-90 415.4 MBq
+   (= lower bound).
+2. Toy E6, distance/trip-heavy weights → 2 trips; 691.1 and 424.6 MBq.
+3. Capacity-forced split: 7 Pb-212 vials at one hospital, Q = 6 → split.
+   Same data, large Q → no split.
+4. Deadline-forced split: one hospital with 08:00 and 15:00 patients.
+5. **Independent solution checker:** recomputes every arrival time,
+   deadline and activity from the routes alone, without the MILP, and
+   checks all rules. It catches formulation bugs that the solver would
+   report as "optimal".
+6. **Waste report** per solution: irreducible (lead time + QC + direct
+   drive) / discretization (rounding to slots) / routing-induced.
+
+**Size** (restricted Gurobi license: ≤ 2,000 variables and constraints)
+
+| Instance | ≈ variables | ≈ constraints | Fits |
+|---|---|---|---|
+| toy_e6 | 110 | 90 | yes |
+| small | 660 | 870 | yes |
+| medium | 810 | 1,030 | yes |
+| large | 13,500 | 16,200 | no (needs full license, O10) |
 
 ---
 
@@ -265,7 +362,7 @@ literature, **L** = reasoned placeholder, should be revisited.
 | Production window | 03:00–12:00 | L — upper bound honours "production ends by a fixed time" |
 | Batch slot width Δ | 30 min | Design choice (§5.3) |
 | Tolerance β | 0.20 | H — NRC 10 CFR 35.63 (D4) |
-| Capacity factor κ | 1.5 | Design choice (§5.4) |
+| Capacity factor κ | 1.5 | Design choice (§5.4). **Phase 7 only**: computed by the generator, unused by Phases 2–6 |
 
 ---
 
@@ -281,10 +378,10 @@ revisit.
 | A3 | Great-circle × circuity travel, time-invariant | No road data until Phase 5 | Rush hour, bridges/tunnels, harbour |
 | A4 | One isotope per truck | Plan §3 (shielding/regulatory separation) | Mixed-load packaging becomes allowed |
 | A5 | One production batch per truck, finish time free within window | Makes routing drive production (D13) | Real hot cells run batches in sequence; limited runs per day |
-| A6 | No explicit synthesis-line sequencing; the shared dispatch limit `m` caps batches finishing per slot (D20) | Keep manufacturing simple (plan §1) | Syntheses take longer than a slot and block the line |
+| A6 | No explicit synthesis-line sequencing; the shared dispatch limit `m` caps batches finishing per slot (D20) | Manufacturing deferred to Phase 7 (D24) | Syntheses take longer than a slot and block the line |
 | A7 | Unit doses, one vial per patient (D14) | Matches therapeutic practice | Bulk/multi-dose supply to hospital pharmacies |
 | A8 | Capacity = vial count per isotope (D15) | Simplest per-isotope capacity | Radiation-based (transport index) limits bind first |
-| A9 | Daily cap in MBq, per isotope, not shared (plan §3) | Lightweight | Shared cyclotron/beam time across isotopes |
+| A9 | **Manufacturer can fill any production order** (Phases 2–6). Capacity modelling deferred to Phase 7 (D24) | Keep the routing story focused; the manufacturer is a customer of the routing output | Scarce cyclotron/generator capacity (esp. At-211) makes the plan unproducible |
 | A10 | τ_p fixed by clinic (D3) | Realistic, and keeps the coupling clean | Clinics re-schedule around deliveries |
 | A11 | Fixed lead time ℓ and QC time q | Simplicity | Variable QC time; per-hospital prep times |
 | A12 | No storage cost at hospital (O6 open) | Not yet decided | Hot-lab space/shielding limited |
@@ -308,6 +405,7 @@ necessarily solved.
 | R4 | Production runs are sequential on real equipment | Several batches finishing at the same time may be physically impossible (A6) |
 | R5 | Y-90 microspheres are in reality produced centrally, often weekly, with vials calibrated to a reference day (hospitals choose larger vials later in the week) | Daily local Y-90 production is unrealistic; Pb-212 (generator-based, regional) and At-211 (cyclotron, local) fit this model far better |
 | R6 | Dose calibrator uncertainty (a few %) and residual activity in syringes/lines | Eats into the ±20% band; motivates D9 robustness analysis |
+| R17 | The plan assumes the manufacturer can produce every order (A9); there is little wiggle room with the manufacturer in practice | Plan may be unproducible; Phase 7 adds capacity, soft doses, and a producibility check |
 | R7 | Receipt rules: packages must be surveyed on receipt (10 CFR 20.1906), hot-lab hours limited | Service time and receiving window are real constraints, possibly larger than modelled |
 | R8 | Vehicle limits are radiation-based (transport index, 49 CFR 173.441); driver dose (ALARA) | Vial count (A8) is a proxy |
 | R9 | Split deliveries have hidden handling costs at the hospital (D10) | Model may split when reality wouldn't |
@@ -349,3 +447,56 @@ necessarily solved.
 .venv/bin/python scripts/generate.py configs/small.yaml --plots   # -> data/small/, outputs/small/
 .venv/bin/python -m pytest -q
 ```
+
+---
+
+## 10. Deferred to Phase 7: manufacturing integration (D24)
+
+Everything here was designed and discussed, then deliberately removed from
+Phases 2–6. The routing layer's contract with the manufacturer is:
+**"here are the batches: isotope, ready-by time, activity per vial."**
+Whether the manufacturer can meet that order is Phase 7's question.
+
+*Interview line:* this was identified early. In practice there is little
+wiggle room with the manufacturer, and how best to model their side is
+still open, so routing was scoped to produce the production order and
+treat the manufacturer's constraints separately.
+
+### 10.1 What stays in Phases 2–6 (it is routing-consequential)
+| Item | Role |
+|---|---|
+| Per-trip batch time `B_k` (D13) | The routing output that sets how much to produce |
+| QC time `q`, production window `[P_min, P_max]` | Fixed inputs *from* the manufacturer |
+| Decay-waste objective (§5.6) | Routing-driven waste; the core trade-off |
+| Dispatch limit `m` (D20) | Loading dock = start of logistics, kept in 2b |
+
+### 10.2 What moves to Phase 7
+| # | Item | Status / design so far |
+|---|---|---|
+| M1 | **Daily production cap** per isotope, `Σ_{p∈P_i} A_p ≤ C_i`, with `C_i = κ·LB_i` so tightness is comparable across sizes (κ < 1 provably infeasible without under-dosing; κ = 1.5 loose; κ ≈ 1.1 tight) | Formulated; generator already computes `daily_cap_mbq` |
+| M2 | **Soft dose target** (D8): deliver a fraction `φ_p ∈ [1−β, 1]` of `x_p` when the cap forces it. Upper band never used (over-dosing only adds waste) | Formulated, see 10.3 |
+| M3 | **Under-dosing penalty** `w_dev`, set automatically above `w_over · max μ`, so the model never trades a patient's dose for waste unless the cap forces it (clinical cost > economic cost) | Formulated |
+| M4 | **D9 case "feasible only because doses sit at the lower band"**: flag solutions where φ_p < 1, then stress-test them. The delay-budget and stress-test parts of D9 stay in Phase 3 | Designed |
+| M5 | **Producibility check** (post-solve): given the manufacturer's real capacity, flag plans that ask for more (R17) | Designed |
+| M6 | **Synthesis-line sequencing**: one synthesis at a time per module, runs longer than a slot (A6, R4). Dispatch limit covers only the per-slot part | Open |
+| M7 | **Shared production capacity across isotopes** (e.g. one cyclotron's beam time for At-211 and others) (A9) | Open |
+| M8 | **QC variability and batch failure** (R3): backup batches, recourse | Open |
+| M9 | **Isotope cost per MBq** to replace dose-equivalent weighting (§5.6) | Open, needs data |
+| M10 | **Packaging/regulatory**: A2 per-package limit (currently a check, non-binding, A14); volume/concentration and radiolysis (E5); radiation-based vehicle limits (R8, R10) | Check only |
+| M11 | **Realistic production model for Y-90** (central, weekly, reference-day vials; R5) | Open |
+| M12 | **Storage cost at hospital** (O6) — hospital-side, but sits with the handover model | Open |
+
+### 10.3 Phase 7 formulation extension (M1–M3)
+Adds to §5.7, without changing any existing constraint:
+
+```
+g_ps ∈ [0,1]                        fraction of x_p delivered if p is produced at slot s
+φ_p = Σ_s g_ps                      delivered fraction
+(1−β)·u_ps ≤ g_ps ≤ u_ps     ∀p,s   exact linearisation of φ_p·u_ps (u binary)
+A_p = Σ_s c_ps·g_ps                 produced activity, replaces Σ_s c_ps·u_ps
+Σ_{p∈P_i} A_p ≤ C_i          ∀i     daily cap
+objective += w_dev · Σ_p (1 − φ_p)
+```
+
+Cost: about `Σ_p |S_p|` extra continuous variables and twice that in
+constraints (roughly +200 variables and +400 constraints on `small`).

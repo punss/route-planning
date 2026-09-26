@@ -44,7 +44,7 @@ operations:
   production_window: ["03:00", "12:00"]
   batch_slot_min: 30            # discretization of batch finish times (DESIGN_NOTES §5.3)
   dose_tolerance: 0.20          # D4: NRC 10 CFR 35.63
-  capacity_factor: 1.5          # C_i = kappa * LB_i (DESIGN_NOTES §5.4)
+  capacity_factor: 1.5          # Phase 7 only (D24): C_i = kappa * LB_i (DESIGN_NOTES §10); unused by Phases 2-6
   fleet_size: null              # D19: max trips on the road at once; null = no cap
   dispatch_per_slot: 2          # D20: trucks loaded/released per slot, shared across isotopes (L confidence)
   turnaround_min: 30            # D21: depot turnaround between trips

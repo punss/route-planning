@@ -19,8 +19,8 @@ each open question an ID (`O#`) so later entries can reference them.
 | D5 | 2026-09-23 | Split deliveries allowed; model must *conclude* when not to split — no hard no-split constraint | User | E2 |
 | D6 | 2026-09-23 | Solver: Gurobi (Northeastern academic license, gurobipy) | User | E2 |
 | D7 | 2026-09-23 | Maintain this timeline document | User | E2 |
-| D8 | 2026-09-24 | Dose target = prescribed dose; band [L, U] stays a hard constraint | User | E3 |
-| D9 | 2026-09-24 | Robustness analysis is a planned deliverable: find solutions that are feasible *only because* doses sit at the band's lower limit, then stress-test them | User | E3 |
+| D8 | 2026-09-24 | Dose target = prescribed dose; band [L, U] stays a hard constraint. *Amended by D24: Phases 2–6 deliver exactly x_p; soft target → Phase 7* | User | E3, E11 |
+| D9 | 2026-09-24 | Robustness analysis is a planned deliverable: find solutions that are feasible *only because* doses sit at the band's lower limit, then stress-test them. *Amended by D24: delay budgets/stress tests stay (Phase 3); the "lower-band" case → Phase 7* | User | E3, E11 |
 | D10 | 2026-09-24 | Split-delivery ties and hidden per-visit costs accepted as-is (no per-visit cost term) | User | E3 |
 | D11 | 2026-09-24 | ~~Arrival time irrelevant to dosing~~ (superseded by D13); hard lead time kept: each dose on location ≥ 2 h before its patient's scheduled time | User | E4, E6 |
 | D12 | 2026-09-24 | Truck capacity set per isotope; A2 kept as a (expected non-binding) per-package check | User | E4 |
@@ -35,6 +35,8 @@ each open question an ID (`O#`) so later entries can reference them.
 | D21 | 2026-09-25 | Multi-trip vehicles; isotope may change between trips; 30-min turnaround; vehicles and drivers interchangeable | User (industry-confirmed) | E9 |
 | D22 | 2026-09-25 | Phase 2 staged: 2a core model → 2b fleet/dispatch/multi-trip | User | E10 |
 | D23 | 2026-09-25 | Placeholder constants (incl. D17 demand, low-confidence params, m = 2) accepted provisionally; revisit only if one drives infeasibility or dominates results | User | E10 |
+| D24 | 2026-09-25 | **Manufacturing-side modelling deferred to a new Phase 7** (capacity, soft doses, sequencing, …). Batch timing stays as the routing output | User | E11 |
+| D25 | 2026-09-25 | Phase 2a MILP formulation fixed (DESIGN_NOTES §5.7): exact doses, dose-equivalent waste, one-sided batch linking, trips = patients | Claude (trimmed from the draft the user reviewed) | E11 |
 
 ### Open questions
 
@@ -51,6 +53,7 @@ each open question an ID (`O#`) so later entries can reference them.
 | O9 | 2026-09-24 | Packaging model: per-patient unit doses vs. a shared bulk vial per hospital | Closed 2026-09-24 → D14 |
 | O10 | 2026-09-24 | Activate Gurobi academic license (only restricted pip license active) | Open — user needs campus network; restricted license in use meanwhile (E8) |
 | O11 | 2026-09-25 | Phase 2 staging: 2a core model (no linking constraints) → 2b add fleet/dispatch/multi-trip | Closed 2026-09-25 → D22 |
+| O12 | 2026-09-25 | Phase order for the interview: 2a → 2b → light Phase 3 → real roads + map (5/6), Phase 4 as discussion topic | Proposed — awaiting user |
 
 ---
 
@@ -475,3 +478,54 @@ config and `Operations`.
   config values, and none is structural. Revisit only if one turns out to
   drive infeasibility or dominate results. Older open items (O6 storage
   cost, O10 license) stay open.
+
+---
+
+## E11 — 2026-09-25 — Interview focus; manufacturing deferred to Phase 7
+
+**Context (decision driver).** The project is the main talking point for
+an **Esri interview on Monday 2026-09-28**, for a role that leans towards
+testing. The user wants the routing work done and explainable by then,
+without carrying extra material they would have to memorise.
+
+**Sequence.**
+1. Claude presented the Phase 2a MILP in chat. It included a daily
+   production cap and a soft-dose mechanism (delivered fraction φ,
+   under-dose penalty).
+2. User: the job is to turn demand and timing into routes and tell the
+   manufacturer how much to dose. Is the manufacturing side worth
+   including?
+3. Claude: the batch timing *is* that "how much to dose" output and must
+   stay (it is the D13 coupling). The cap and soft doses exist only for
+   "what if the manufacturer can't make it". Dropping them costs the
+   "feasible only because of the lower band" part of D9.
+4. Claude also suggested an interview narrative (problem → key insight →
+   trade-off → two modelling tricks → validation story). It links the
+   project to Esri Network Analyst's VRP solver (road-network cost matrix,
+   insertion construction, tabu-search improvement; capacities, time
+   windows) and proposes a phase order suited to Esri (→ O12).
+5. **User decision (D24):** keep manufacturing, but as a later phase. The
+   interview line: *"this was identified, but there is little wiggle room
+   with the manufacturer and we're still working out how that part is best
+   modelled."*
+
+**Decisions.**
+- **D24 — New Phase 7: manufacturing integration.** Moved there: daily
+  production cap, soft dose target and under-dose penalty (D8 amended), the
+  "lower-band" robustness case (D9 amended), producibility check,
+  synthesis sequencing, shared production capacity, QC variability/batch
+  failure, isotope cost per MBq, packaging/regulatory detail, realistic Y-90
+  supply, hospital storage cost (O6). **Stays:** per-trip batch time
+  (routing output), QC time and production window as fixed inputs,
+  decay-waste objective, dispatch limit. New assumption A9: the manufacturer
+  can fill any order. New issue R17.
+- **D25 — Phase 2a formulation fixed** (DESIGN_NOTES §5.7), without the
+  manufacturing terms: 6 variable families, constraints C1–C11, waste in
+  dose equivalents. Size on `small` ≈ 660 variables / 870 constraints
+  (restricted license fits toy/small/medium). The removed terms are kept as
+  the Phase 7 extension in DESIGN_NOTES §10.3 (~+200 variables on `small`).
+
+**Updated:** plan.md §1–3, §5–6 (new Phase 7; Phase 2 description);
+DESIGN_NOTES status, §3, §5.4, §5.6 (dose equivalents), new §5.7, A6, A9,
+R17, new §10; `capacity_factor` config comment. The generator still
+computes `daily_cap_mbq` for Phase 7; no code changed.

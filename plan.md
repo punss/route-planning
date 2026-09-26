@@ -20,8 +20,11 @@ dosing.
 
 This is being built as a portfolio/research project — the priority is a
 rigorous, well-documented approach to the decay↔routing coupling, not
-manufacturing-side realism. Manufacturing capacity constraints should be
-present but simple; do not over-engineer that part.
+manufacturing-side realism. **Manufacturing-side modelling (production
+capacity, soft doses, synthesis sequencing, etc.) is deferred to Phase 7**
+(revised 2026-09-25, TIMELINE.md D24). Phases 1–6 treat the manufacturer as
+a customer of the routing output: each trip hands over a production order
+(isotope, ready-by time, activity per vial). Full list in DESIGN_NOTES.md §10.
 
 ## 2. Physical / Decay Model
 
@@ -33,11 +36,13 @@ present but simple; do not over-engineer that part.
   meaningfully different half-lives to make the problem interesting).
 - Each patient at each hospital has a **required activity at time of
   administration**, `x`. Model demand as a **range/tolerance band**, not a
-  bare "≥ x": each dose is produced so the patient receives their
-  **prescribed dose** at their scheduled administration time, with the band
-  `[L_p, U_p]` as hard bounds and deviation from the prescribed dose
-  penalised (soft target). (Revised 2026-09-24: an earlier version targeted
-  `upper_limit + delta` — see TIMELINE.md, D8.)
+  bare "≥ x". In Phases 2–6 each dose is produced so the patient receives
+  **exactly the prescribed dose** at their scheduled administration time,
+  and the band `[L_p, U_p]` is used for robustness analysis (how much delay
+  a dose can absorb). Using the band as a decision (soft target with
+  penalised deviation) only matters when production capacity binds, so it
+  moves to **Phase 7** with the rest of manufacturing (TIMELINE.md D8, D24).
+  (Revised 2026-09-24: an earlier version targeted `upper_limit + delta`.)
   Patient administration times are **set by the clinic** (an input to the
   model, not a decision).
 - **Unit doses** (TIMELINE.md D14): each patient's dose is its own vial,
@@ -70,9 +75,9 @@ present but simple; do not over-engineer that part.
   toward trucks carrying patients with similar treatment times on short
   routes — in direct tension with minimising distance and vehicle count.
 - **Simplification:** there is no explicit production-line sequencing (one
-  hot cell running one synthesis at a time). This is deliberately left out
-  per §1. The shared **dispatch limit** (§3) caps how many batches can
-  finish per time slot, which covers the main effect (TIMELINE.md D20).
+  hot cell running one synthesis at a time) — deferred to Phase 7. The
+  shared **dispatch limit** (§3) caps how many batches can finish per time
+  slot, which covers the main effect (TIMELINE.md D20).
 - **Manufacturing ceiling**: research and apply a real regulatory ceiling on
   producible/transportable activity per shipment — specifically the
   isotope-specific "A2 quantity" limits used in NRC/DOT Type A package
@@ -82,7 +87,8 @@ present but simple; do not over-engineer that part.
   (Clarified 2026-09-23/24: A2 caps activity per **package**, not per
   shipment or truck; exceeding it means more packages, not infeasibility.
   At realistic dose sizes it is expected to be non-binding and is kept as a
-  check — see TIMELINE.md, E2 and D12.)
+  check — see TIMELINE.md, E2 and D12. Confirmed non-binding in Phase 1:
+  worst-case vial ≤ 1.4% of A2. Any packaging modelling → Phase 7.)
 - **MILP tractability note**: `exp(−λ·P_k)` with continuous `P_k`,
   multiplied by binary "patient p on truck k" variables, is nonlinear. To
   avoid this, discretize the batch finish / dispatch time `P_k` into a small
@@ -127,11 +133,10 @@ present but simple; do not over-engineer that part.
   possible later realism upgrade.
 - Deliveries happen daily, scheduled **2 days in advance** for a given
   delivery day.
-- Manufacturing has a **per-drug capacity limit** (simple upper bound on
-  total activity, in GBq, producible per day per isotope, summed over that
-  drug's batches) — not shared across drugs, kept intentionally lightweight.
-  Because batch activity depends on batch timing, a tight cap pushes the
-  model toward later batches, and so toward more or shorter routes.
+- ~~Manufacturing has a per-drug capacity limit~~ → **moved to Phase 7**
+  (TIMELINE.md D24). Phases 2–6 assume the manufacturer can fill any order
+  (DESIGN_NOTES A9, R17). The generator still computes a per-drug cap
+  (`daily_cap_mbq`) so Phase 7 can use it without regenerating data.
 
 ## 4. Demand & Network
 
@@ -154,9 +159,10 @@ present but simple; do not over-engineer that part.
 
 Multi-objective, with priority order open to revision once results are in.
 Start with a weighted combination of:
-1. Minimize total manufacturing over-dose (excess activity produced beyond
-   the theoretical minimum needed at point of administration) — this is a
-   proxy for cost, waste, and radiation-safety exposure.
+1. Minimize total over-production (excess activity produced beyond what
+   is administered, i.e. decay waste caused by batch timing) — a proxy for
+   cost, waste, and radiation-safety exposure. Measured in dose equivalents
+   so isotopes are comparable (DESIGN_NOTES §5.6).
 2. Minimize total transportation distance/time across all routes.
 3. Minimize number of active routes/vehicles used.
 
@@ -172,12 +178,15 @@ All of these phases should be build one after the other, only once the user give
 depot + hospital locations (single metro area), hospital-drug eligibility,
 per-hospital daily patient counts and dose requirements, 3 isotopes with
 real half-lives and A2-derived activity ceilings, per-drug manufacturing
-capacity. Should scale cleanly from small (validation-sized) to larger
+capacity (computed for Phase 7; unused before then). Should scale cleanly from small (validation-sized) to larger
 instances via config, not code changes.
 
 **Phase 2 — Exact MILP formulation.** Formulate and implement the full
-problem (decay-linked dosing + VRP + manufacturing capacity + patient-level
-unit doses assigned to per-truck production batches) as a MILP. Use
+problem (decay-linked dosing + VRP + patient-level unit doses assigned to
+per-truck production batches) as a MILP. Manufacturing capacity is **not**
+part of Phase 2 (→ Phase 7). Staged (TIMELINE.md D22): **2a** core model
+(DESIGN_NOTES §5.7); **2b** adds fleet cap, shared dispatch limit and
+multi-trip (DESIGN_NOTES §5.5). Use
 discretized batch/dispatch time slots per Section 2. Solve on small instances using an
 available solver (MILP solver such as Gurobi). Validate correctness on
 hand-checkable toy cases before scaling up.
@@ -202,6 +211,21 @@ hospital coordinates/distances for real map data for the chosen metro area
 distance). Flagged as a natural extension, not part of the initial build.
 
 **Phase 6 Integrate Routes for drivers thru Maps API** Goal here is to be able to display the route on (maybe) Google Maps, which the manager at the plant could use to track the routes, as well as the provide to the drivers that will be making the delivery that morning.
+
+**Phase 7 — Manufacturing integration** (added 2026-09-25, TIMELINE.md
+D24). Model the manufacturer's side of the handover, which Phases 1–6
+treat as "the manufacturer can fill any production order". Items
+(details and the formulation extension in DESIGN_NOTES.md §10):
+daily production capacity per isotope; soft dose target with a penalised
+under-dose when capacity binds; the robustness case "feasible only because
+doses sit at the lower band"; a post-solve producibility check against real
+capacity; synthesis-line sequencing; production capacity shared across
+isotopes; QC variability and batch failure; isotope cost per MBq;
+packaging/regulatory detail (A2, radiation-based vehicle limits); a
+realistic Y-90 supply model; storage cost at the hospital (O6). Rationale
+for deferring: there is little wiggle room with the manufacturer in
+practice, and how their side is best modelled is still open, so the
+routing layer is scoped to produce the production order and nothing more.
 
 ## 7. Tech Stack
 
